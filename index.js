@@ -55,7 +55,7 @@ app.get("/", (req, res) => {
 // --------------------
 app.get("/test-gemini", async (req, res) => {
   const result = await client.models.generateContent({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     contents: [{ role: "user", parts: [{ text: "Say hello" }] }],
   });
 
@@ -82,7 +82,7 @@ app.post(
         req.body.prompt || "Analyze this image";
 
       const result = await client.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-2.0-flash",
         contents: [
           {
             role: "user",
