@@ -5,34 +5,39 @@ import multer from "multer";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
 
-// --------------------
-// Load env variables
-// --------------------
 dotenv.config();
 
-// --------------------
-// App setup
-// --------------------
 const app = express();
-app.use(cors());
-app.use(express.json());
+app.use(cors()); // ✅ CORS OK
+
+// ❌ DO NOT use express.json() globally
 
 // --------------------
 // Multer setup
 // --------------------
 const upload = multer({
   dest: "uploads/",
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      cb(new Error("Only image files allowed"));
-    }
-    cb(null, true);
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
   },
 });
 
 // --------------------
-// Gemini client (CORRECT)
+// Multer error handler (MUST be BEFORE routes)
+// --------------------
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    console.error("🔥 Multer error:", err.code);
+    return res.status(400).json({
+      error: "Upload error",
+      details: err.code,
+    });
+  }
+  next(err);
+});
+
+// --------------------
+// Gemini client
 // --------------------
 const client = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -42,59 +47,42 @@ const client = new GoogleGenAI({
 // Health check
 // --------------------
 app.get("/", (req, res) => {
-  res.send("✅ Gemini backend is running");
+  res.send("Gemini backend running ✅");
 });
 
 // --------------------
-// Gemini text test (FIXED)
+// Gemini text test
 // --------------------
 app.get("/test-gemini", async (req, res) => {
-  try {
-    const result = await client.models.generateContent({
-      model: "gemini-2.0-flash",
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: "Say 'Gemini API is working' in one sentence." }],
-        },
-      ],
-    });
+  const result = await client.models.generateContent({
+    model: "gemini-1.5-flash",
+    contents: [{ role: "user", parts: [{ text: "Say hello" }] }],
+  });
 
-    res.json({
-      success: true,
-      output: result.text,
-    });
-  } catch (error) {
-    console.error("Gemini test error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Gemini API test failed",
-    });
-  }
+  res.json({ output: result.text });
 });
 
 // --------------------
-// Image analysis endpoint (FIXED)
+// IMAGE ANALYSIS (IMPORTANT)
 // --------------------
 app.post(
   "/analyze-image",
-  upload.single("image"),
+  upload.single("image"), // ✅ Multer FIRST
   async (req, res) => {
     try {
-      if (!req.file) {
-        return res.status(400).json({ error: "Image is required" });
-      }
+      console.log("📤 Image received:", {
+        size: req.file.size / 1024 + " KB",
+        type: req.file.mimetype,
+      });
 
-      const prompt =
-        req.body.prompt || "Analyze this image and explain what you see";
-
-      // Read image
       const imageBuffer = fs.readFileSync(req.file.path);
       const base64Image = imageBuffer.toString("base64");
 
-      // Gemini Vision call (CORRECT FORMAT)
+      const prompt =
+        req.body.prompt || "Analyze this image";
+
       const result = await client.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-flash",
         contents: [
           {
             role: "user",
@@ -111,30 +99,26 @@ app.post(
         ],
       });
 
-      // Cleanup
       fs.unlinkSync(req.file.path);
 
-      res.json({
-        output: result.text,
-      });
-    } catch (error) {
-      console.error("Gemini image error:", error);
+      res.json({ output: result.text });
+    } catch (err) {
+      console.error("🔥 Gemini error:", err);
 
       if (req.file?.path && fs.existsSync(req.file.path)) {
         fs.unlinkSync(req.file.path);
       }
 
       res.status(500).json({
-        error: "Image analysis failed",
+        error: "Gemini processing failed",
+        details: err.message,
       });
     }
   }
 );
 
-// --------------------
-// Start server
-// --------------------
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+app.listen(PORT, () =>
+  console.log(`🚀 Server running on ${PORT}`)
+);
+
