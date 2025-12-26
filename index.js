@@ -90,7 +90,7 @@ app.post(
               { text: prompt },
               {
                 inlineData: {
-                  mimeType: req.file.mimetype,
+                  mimeType: "image/jpeg",
                   data: base64Image,
                 },
               },
